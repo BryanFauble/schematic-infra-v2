@@ -61,6 +61,7 @@ class ServiceStack(cdk.Stack):
         )
 
         # ECS task with fargate
+        # TODO: Lower memory/cpu for containers that do not need this
         self.task_definition = ecs.FargateTaskDefinition(
             self,
             "TaskDef",
@@ -79,16 +80,18 @@ class ServiceStack(cdk.Stack):
             isecret = sm.Secret.from_secret_name_v2(scope, id, name)
             return ecs.Secret.from_secrets_manager(isecret)
 
+        secrets = {}
+        for secret in props.container_secrets:
+            secrets[secret.environment_key] = _get_secret(
+                self, f"sm-secrets-{secret.environment_key}", secret.secret_name
+            )
+
         self.container = self.task_definition.add_container(
             props.container_name,
             image=image,
             memory_limit_mib=props.container_memory,
             environment=props.container_env_vars,
-            secrets={
-                "SECRETS_MANAGER_SECRETS": _get_secret(
-                    self, "sm-secrets", props.container_secret_name
-                )
-            },
+            secrets=secrets,
             port_mappings=[
                 ecs.PortMapping(
                     name=props.container_name,
@@ -100,6 +103,7 @@ class ServiceStack(cdk.Stack):
                 stream_prefix=f"{construct_id}",
                 log_retention=logs.RetentionDays.FOUR_MONTHS,
             ),
+            command=props.container_command,
         )
 
         self.security_group = ec2.SecurityGroup(self, "SecurityGroup", vpc=vpc)
